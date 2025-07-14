@@ -1,8 +1,10 @@
-import { SignInSchema, SignUpSchema } from "@repo/schemas";
+import { createRoomSchema, SignInSchema, SignUpSchema } from "@repo/schemas";
 import express, { NextFunction, Request, Response } from "express";
-import  {db }from "@repo/db"
-import { usersTable } from "@repo/db/scheam";
 import jwt from "jsonwebtoken";
+import{ JWT_SECRET }from "@repo/bc"
+import{ prisma} from "@repo/db"
+import { middleware } from "./middleWare";
+import bcrypt from "bcrypt"
 const app = express();
 const PORT = 8000;
 app.use(express.json());
@@ -15,15 +17,23 @@ app.post("/signup", async(req: Request, res: Response) => {
       res.status(422).json({ msg: "Invalid Body" });
       return 
     }
+
     const {name,email,password}=result.data
-    
-    //store in db
-  const [user]= await db.insert(usersTable).values({name,email,password}).returning()
-    // jwt
-    const token = jwt.sign({ userId: user?.id}, "12345678", {
-      algorithm: "RS256",
-    });
-    res.json(token);
+    const user=await prisma.user.findUnique({where:{email}})
+    if(user){
+      res.json({msg:"user already exist"})
+      return
+    }
+    const hasedPassword=await bcrypt.hash(password,10);
+    const newUser=await prisma.user.create({
+      data:{
+        name,
+        password:hasedPassword,
+        email
+      }
+    })
+
+    res.json({userid:newUser.id});
   } catch (error) {
     console.error(error);
     res.status(500).json({
@@ -32,43 +42,109 @@ app.post("/signup", async(req: Request, res: Response) => {
   }
 });
 
-app.post("signin", (req, res) => {
+app.post("/signin", async(req, res) => {
   try {
     //parse the body
     const result = SignInSchema.safeParse(req.body);
     if (!result.success) {
       res.status(422).json({ msg: "Invalid Body" });
+      return
     }
+    const {email,password}=result.data
     //check db
+    const user=await prisma.user.findUnique({where:{email}})
+    console.log(user)
+    if(!user){
+      
+      res.json({msg:"user or pasword did not match"});
+      return
+    }
+   const passwordMatched= await bcrypt.compare(password,user.password);
+   console.log(password);
+   console.log(passwordMatched)
+   if(!passwordMatched){
+    res.json({msg:"user or password did not matacb"});
+      return
+   }
     //create jwt token  and return
-    const token = jwt.sign({ username: result.data?.email }, "12345678", {
-      algorithm: "RS256",
-    });
+    const token = jwt.sign({ userId:user.id }, JWT_SECRET);
     res.json(token);
   } catch (error) {
     console.log(error);
+     res.status(500).json({
+      message: "Internal Server Error",
+    });
   }
 });
 
 
 
-app.post("createroom", (req, res) => {
+app.post("/room",middleware, async(req, res) => {
   try {
-    //parse the body
-    //store to db
-    //create jwt token  and return
+    const userId=req.userId ;
+     const parsedData=createRoomSchema.safeParse(req.body);
+    if(!userId){
+    res.status(403).json({
+            msg: "Unauthorized"
+        })
+        return
+    }
+    if(!parsedData.success){
+      res.json({msg:"slug not provided"})
+      return 
+    }
+    const {slug}=parsedData.data
+   const room = await prisma.room.create({
+    data: {
+      slug,
+      adminId:userId
+    }
+  })
+
+   res.json({msg:{roomId:room.id}});
   } catch (error) {
     console.log(error);
+     res.status(500).json({
+      message: "Internal Server Error",
+    });
   }
 });
+
+
+app.get("/chats/:roomId", middleware,async(req,res)=>{
+ try {
+  const userId=req.userId as string
+  const roomId=Number(req.params.roomId)
+  const skip=req.query.skip ?? "0" ;
+  const take=req.query.take ?? "50" ;
+  if(!userId){
+    res.status(403).json({
+            msg: "Unauthorized"
+        })
+        return
+    }
+  const chats=await prisma.chat.findMany({
+    skip :parseInt(skip as string),
+    take:parseInt(take as string),
+    orderBy:{
+      id:"asc"
+    },
+    where:{
+      roomId
+    }
+  })
+  res.json({
+    chats
+  })
+ } catch (error) {
+  console.log(error);
+     res.status(500).json({
+      message: "Internal Server Error",
+    });
+ }
+})
+
 app.listen(PORT, () => {
   console.log(`Listening on port ${PORT}`);
 });
 
-
-const tokenmiddleware=(req:Request,res:Response,next:NextFunction)=>{
-  const jwtToken=req.body.token;
-  const userid= jwt.verify(jwtToken, '12345678');
-  //query db 
-  return userid 
-}

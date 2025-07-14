@@ -1,6 +1,8 @@
+version: "3.9"
+
 services:
   postgres:
-    image: postgres
+    image: postgres:16
     container_name: my_postgres
     restart: unless-stopped
     environment:
@@ -8,9 +10,18 @@ services:
       POSTGRES_PASSWORD: mypassword
       POSTGRES_DB: draw_app
     ports:
-      - "5432:5432"
+      - "5433:5432"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - draw_app_data:/var/lib/postgresql/data
 
+  redis:
+    image: redis:7
+    container_name: my_redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
 volumes:
-  postgres_data:
+ draw_app_data:
+ redis_data:
