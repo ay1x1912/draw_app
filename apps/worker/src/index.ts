@@ -9,13 +9,15 @@ const processChat=async(chat:string)=>{
  console.log(roomId);
  console.log(userId);
  console.log(msg);
-const storedChat= await prisma.chat.create({
+ const msgForDb=JSON.stringify(msg);
+ console.log(msgForDb)
+const storedChat=await prisma.chat.create({
    data:{
-      roomId,
       userId,
-      msg
+      roomId,
+      msg:msgForDb
    }
- })
+})
  console.log(storedChat);
 }
 const startWorker=async()=>{
